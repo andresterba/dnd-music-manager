@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  dnd-music-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dnd-music-manager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist uploaded audio files across container rebuilds
+      - uploads:/app/uploads
+      # Persist the SQLite database file
+      - db:/app/data
+    environment:
+      - TZ=Europe/Berlin
+      - DATA_DIR=/app/data
+      # PUBLIC_PATH: the sub-path the *browser* sees, e.g. /dnd
+      # Set this when a reverse proxy exposes the app under a sub-path.
+      # The JS will prefix all API calls with this value so the proxy can route them.
+      # - PUBLIC_PATH=/dnd
+      #
+      # BASE_PATH: a prefix that *Go itself* must strip before routing.
+      # Only set this when the proxy does NOT strip the prefix before forwarding.
+      # Leave empty when using Caddy's handle_path or uri strip_prefix (they strip it).
+      # - BASE_PATH=/dnd
+      #
+      # Uncomment to log every request (method, path, status, duration).
+      # - LOG_REQUESTS=true
+
+volumes:
+  uploads:
+  db:

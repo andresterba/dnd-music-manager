@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D&D Music Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">
+        <span class="sidebar-icon">⚔️</span>
+        <span>D&amp;D Music</span>
+      </div>
+      <div class="sidebar-header-actions">
+        <button class="btn btn-primary btn-sm" id="btn-add-campaign">+ Campaign</button>
+        <button class="sidebar-close-btn" id="btn-close-sidebar" title="Close sidebar">&#10005;</button>
+      </div>
+    </div>
+
+    <!-- Nav tabs: Campaigns / Library -->
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" id="tab-campaigns" data-tab="campaigns">Campaigns</button>
+      <button class="sidebar-tab" id="tab-library" data-tab="library">Library</button>
+    </div>
+
+    <div class="sidebar-body" id="campaign-tree">
+      <div class="sidebar-empty">No campaigns yet.<br/>Click <strong>+ Campaign</strong> to begin.</div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MAIN CONTENT
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <button class="sidebar-toggle-btn" id="btn-toggle-sidebar" title="Toggle sidebar">
+    <span></span><span></span><span></span>
+  </button>
+
+  <main class="main-content" id="main-content">
+
+    <!-- Welcome empty state -->
+    <div class="main-empty" id="main-empty">
+      <div class="main-empty-icon">🎵</div>
+      <h2>Welcome to D&amp;D Music Manager</h2>
+      <p>Select a session from the left sidebar to view its tracks,<br/>or create a new campaign to get started.</p>
+    </div>
+
+    <!-- ── Session view ──────────────────────────────────────────────── -->
+    <div class="session-view" id="session-view" style="display:none;">
+      <div class="session-header">
+        <div class="session-header-left">
+          <h1 class="session-title" id="session-title">Session Name</h1>
+          <span class="session-campaign" id="session-campaign-name">Campaign Name</span>
+        </div>
+        <button class="btn btn-primary" id="btn-add-from-library">&#43; Add from Library</button>
+      </div>
+
+      <!-- Tag filter bar -->
+      <div class="tag-filter-bar" id="tag-filter-bar" style="display:none;">
+        <span class="tag-filter-label">Filter:</span>
+        <div class="tag-filter-pills" id="tag-filter-pills"></div>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-filter" style="display:none;">Clear</button>
+      </div>
+
+      <!-- Session track list (ordered, drag-to-reorder) -->
+      <div class="track-list" id="track-list">
+        <div class="tracks-empty" id="tracks-empty">
+          No tracks yet. Click <strong>Add from Library</strong> to add tracks to this session.
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Library view ─────────────────────────────────────────────── -->
+    <div class="library-view" id="library-view" style="display:none;">
+      <div class="session-header">
+        <div class="session-header-left">
+          <h1 class="session-title">🎵 Track Library</h1>
+          <span class="session-campaign">All uploaded tracks — reuse them across any session</span>
+        </div>
+        <button class="btn btn-primary" id="btn-upload-library-track">&#8593; Upload Track</button>
+      </div>
+
+      <!-- Library tag filter bar -->
+      <div class="tag-filter-bar" id="library-tag-filter-bar" style="display:none;">
+        <span class="tag-filter-label">Filter:</span>
+        <div class="tag-filter-pills" id="library-tag-filter-pills"></div>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-library-filter" style="display:none;">Clear</button>
+      </div>
+
+      <!-- Library track list -->
+      <div class="track-list" id="library-track-list">
+        <div class="tracks-empty" id="library-tracks-empty">
+          No tracks in the library yet. Upload your first track!
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       BOTTOM PLAYER BAR
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <footer class="player-bar" id="player-bar">
+
+    <div class="player-progress-wrap" id="player-progress-wrap">
+      <div class="player-progress-bar" id="player-progress-bar"></div>
+    </div>
+
+    <!-- Now Playing -->
+    <div class="player-now-playing">
+      <div class="player-track-icon">♪</div>
+      <div class="player-track-info">
+        <span class="player-track-name" id="player-track-name">No track playing</span>
+        <span class="player-track-session" id="player-track-session"></span>
+      </div>
+      <div class="player-time" id="player-time"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="player-controls">
+      <button class="player-btn" id="btn-prev" title="Previous">&#9664;&#9664;</button>
+      <button class="player-btn player-btn-play" id="btn-play-pause" title="Play/Pause">&#9654;</button>
+      <button class="player-btn" id="btn-next" title="Next">&#9654;&#9654;</button>
+
+      <div class="player-divider"></div>
+
+      <button class="player-btn player-btn-toggle" id="btn-loop" title="Loop current track">&#8635;</button>
+
+      <div class="player-divider"></div>
+
+      <div class="player-volume">
+        <span class="player-vol-icon" id="vol-icon" title="Mute/Unmute">&#128266;</span>
+        <input type="range" class="player-slider" id="volume-slider" min="0" max="1" step="0.01" value="0.8" />
+      </div>
+    </div>
+
+    <!-- Right: crossfade + queue + layers -->
+    <div class="player-right">
+      <div class="player-crossfade">
+        <button class="player-btn player-btn-toggle player-btn-sm" id="btn-crossfade" title="Toggle crossfade">&#8652; Fade</button>
+        <div class="crossfade-slider-wrap" id="crossfade-slider-wrap" style="display:none;">
+          <input type="range" class="player-slider player-slider-sm" id="crossfade-slider" min="0" max="10" step="0.5" value="3" />
+          <span class="crossfade-value" id="crossfade-value">3s</span>
+        </div>
+      </div>
+
+      <button class="player-btn player-btn-toggle player-btn-sm" id="btn-open-queue" title="Manage queue">
+        <span class="queue-icon">&#9776;</span>
+        <span id="queue-count">0 in queue</span>
+      </button>
+
+      <div class="player-layers" id="player-layers"></div>
+    </div>
+  </footer>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       QUEUE PANEL
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="queue-panel-overlay" id="queue-panel-overlay"></div>
+  <aside class="queue-panel" id="queue-panel">
+    <div class="queue-panel-header">
+      <h2 class="queue-panel-title">&#9776; Queue</h2>
+      <div class="queue-panel-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-clear-queue">Clear all</button>
+        <button class="queue-panel-close" id="btn-close-queue" title="Close">&times;</button>
+      </div>
+    </div>
+    <div class="queue-panel-body" id="queue-panel-body">
+      <div class="queue-empty" id="queue-empty">The queue is empty.</div>
+      <ul class="queue-list" id="queue-list"></ul>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MODALS
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Campaign Modal -->
+  <div class="modal-overlay" id="modal-campaign" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="campaign-modal-title">New Campaign</h2>
+        <button class="modal-close" data-close="modal-campaign">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Campaign Name <span class="required">*</span></label>
+        <input type="text" class="form-input" id="campaign-name-input" placeholder="e.g. Curse of Strahd" maxlength="120" />
+        <label class="form-label" style="margin-top:12px;">Description</label>
+        <textarea class="form-input form-textarea" id="campaign-desc-input" placeholder="Optional description..." rows="3"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-campaign">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-campaign">Save Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session Modal -->
+  <div class="modal-overlay" id="modal-session" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="session-modal-title">New Session</h2>
+        <button class="modal-close" data-close="modal-session">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Session Name <span class="required">*</span></label>
+        <input type="text" class="form-input" id="session-name-input" placeholder="e.g. Session 1 – The Tavern" maxlength="120" />
+        <label class="form-label" style="margin-top:12px;">Description</label>
+        <textarea class="form-input form-textarea" id="session-desc-input" placeholder="Optional description..." rows="3"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-session">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-session">Save Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Track Modal (uploads to library) -->
+  <div class="modal-overlay" id="modal-upload" style="display:none;">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 class="modal-title">Upload Track to Library</h2>
+        <button class="modal-close" data-close="modal-upload">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Track Name <span class="required">*</span></label>
+        <input type="text" class="form-input" id="upload-name-input" placeholder="e.g. Tavern Ambience" maxlength="200" />
+
+        <label class="form-label" style="margin-top:12px;">Audio File <span class="required">*</span></label>
+        <div class="file-drop-zone" id="file-drop-zone">
+          <div class="file-drop-icon">🎵</div>
+          <div class="file-drop-text" id="file-drop-text">Drop audio file here or <span class="file-browse-link">browse</span></div>
+          <div class="file-drop-hint">MP3, WAV, OGG, FLAC, M4A — max 100 MB</div>
+          <input type="file" id="upload-file-input" accept=".mp3,.wav,.ogg,.flac,.m4a" style="display:none;" />
+        </div>
+
+        <label class="form-label" style="margin-top:12px;">Tags</label>
+        <div class="tag-input-wrap" id="upload-tag-input-wrap">
+          <div class="tag-input-pills" id="upload-tag-pills"></div>
+          <input type="text" class="tag-input-field" id="upload-tag-field" placeholder="Type tag and press Enter or comma..." />
+        </div>
+
+        <div class="upload-progress-wrap" id="upload-progress-wrap" style="display:none;">
+          <div class="upload-progress-bar" id="upload-progress-bar"></div>
+          <span class="upload-progress-text" id="upload-progress-text">Uploading…</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-upload">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-upload">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Library Track Modal -->
+  <div class="modal-overlay" id="modal-edit-track" style="display:none;">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit Track</h2>
+        <button class="modal-close" data-close="modal-edit-track">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-track-id" />
+        <label class="form-label">Track Name <span class="required">*</span></label>
+        <input type="text" class="form-input" id="edit-track-name-input" placeholder="Track name" maxlength="200" />
+
+        <label class="form-label" style="margin-top:12px;">Tags</label>
+        <div class="tag-input-wrap" id="edit-tag-input-wrap">
+          <div class="tag-input-pills" id="edit-tag-pills"></div>
+          <input type="text" class="tag-input-field" id="edit-tag-field" placeholder="Type tag and press Enter or comma..." />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-edit-track">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-edit-track">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add from Library Modal (picker) -->
+  <div class="modal-overlay" id="modal-library-picker" style="display:none;">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 class="modal-title">Add Tracks from Library</h2>
+        <button class="modal-close" data-close="modal-library-picker">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" class="form-input" id="library-picker-search"
+               placeholder="Search by name or tag…" autocomplete="off" />
+        <div class="library-picker-list" id="library-picker-list">
+          <div class="tracks-empty">Loading library…</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-library-picker">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div class="modal-overlay" id="modal-confirm" style="display:none;">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 class="modal-title">Confirm Delete</h2>
+        <button class="modal-close" data-close="modal-confirm">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message">Are you sure you want to delete this item? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-confirm">Cancel</button>
+        <button class="btn btn-danger" id="btn-confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

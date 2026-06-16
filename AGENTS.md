@@ -1,0 +1,1 @@
+- This is a production app now. Every change to the databse schema must be handled via migrations.

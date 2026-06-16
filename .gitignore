@@ -1,0 +1,26 @@
+# Compiled binary
+dnd-music-manager
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Persistent data directory (created at runtime)
+data/
+
+# Uploaded audio files — keep the placeholder but ignore actual uploads
+uploads/*
+!uploads/.gitkeep
+
+# Go build/test cache
+*.test
+*.out
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
