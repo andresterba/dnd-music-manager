@@ -510,7 +510,7 @@ func (h *Handler) uploadLibraryTrack(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[upload] copied %d bytes in %s", written, time.Since(start))
 
 	log.Printf("[upload] inserting into database…")
-	track, err := db.CreateLibraryTrack(h.DB, name, filename, tags)
+	track, err := db.CreateLibraryTrack(h.DB, name, filename, header.Filename, tags)
 	if err != nil {
 		log.Printf("[upload] database error: %v", err)
 		_ = os.Remove(destPath)

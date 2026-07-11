@@ -1347,26 +1347,29 @@ async function saveSession() {
 /* ═══════════════════════════════════════════════════════════════════════════════
    UPLOAD TRACK MODAL
    ═══════════════════════════════════════════════════════════════════════════════ */
-let uploadFile = null;
+let uploadFiles = [];
 
 function openUploadModal() {
-  uploadFile = null;
+  uploadFiles = [];
   state.uploadTags = [];
   document.getElementById('upload-name-input').value = '';
   document.getElementById('upload-file-input').value = '';
-  document.getElementById('file-drop-text').innerHTML = 'Drop audio file here or <span class="file-browse-link">browse</span>';
+  document.getElementById('file-drop-text').innerHTML = 'Drop audio files here or <span class="file-browse-link">browse</span>';
   document.getElementById('file-drop-zone').classList.remove('has-file', 'dragover');
   document.getElementById('upload-progress-wrap').style.display = 'none';
   document.getElementById('upload-progress-bar').style.width    = '0%';
+  document.getElementById('upload-name-row').style.display = '';
   renderTagPills('upload');
   openModal('modal-upload');
   setTimeout(() => document.getElementById('upload-name-input').focus(), 80);
 }
 
 async function saveUpload() {
+  if (!uploadFiles.length) { showToast('Please select an audio file', 'error'); return; }
+
+  const isSingle = uploadFiles.length === 1;
   const name = document.getElementById('upload-name-input').value.trim();
-  if (!name)       { showToast('Track name is required', 'error'); return; }
-  if (!uploadFile) { showToast('Please select an audio file', 'error'); return; }
+  if (isSingle && !name) { showToast('Track name is required', 'error'); return; }
 
   const btn = document.getElementById('btn-save-upload');
   btn.disabled = true;
@@ -1376,81 +1379,122 @@ async function saveUpload() {
   const progressText = document.getElementById('upload-progress-text');
   progressWrap.style.display = '';
   progressBar.style.width    = '0%';
-  progressText.textContent   = 'Uploading…';
 
   try {
-    const fd = new FormData();
-    fd.append('file', uploadFile);
-    fd.append('name', name);
-    fd.append('tags', state.uploadTags.join(','));
+    if (isSingle) {
+      progressText.textContent = 'Uploading…';
 
-    // Use XMLHttpRequest for progress tracking
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${BASE_PATH}/api/library`);
+      const fd = new FormData();
+      fd.append('file', uploadFiles[0]);
+      fd.append('name', name);
+      fd.append('tags', state.uploadTags.join(','));
 
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          progressBar.style.width  = pct + '%';
-          progressText.textContent = `Uploading… ${pct}%`;
-        }
-      });
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${BASE_PATH}/api/library`);
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            console.error('Upload: server returned non-JSON on success. Status:', xhr.status);
-            console.error('Upload: raw response body:', xhr.responseText);
-            console.error('Upload: response headers:', xhr.getAllResponseHeaders());
-            reject(new Error(
-              `Server returned invalid JSON after upload (status ${xhr.status}). ` +
-              `Raw response: ${xhr.responseText.substring(0, 300)}`
-            ));
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width  = pct + '%';
+            progressText.textContent = `Uploading… ${pct}%`;
           }
-        } else {
-          let msg = `HTTP ${xhr.status}`;
-          try {
-            const parsed = JSON.parse(xhr.responseText);
-            msg = parsed.error || msg;
-          } catch {
-            // Response wasn't JSON — use the raw body (truncated) as the message
-            if (xhr.responseText) {
-              msg = `HTTP ${xhr.status}: ${xhr.responseText.substring(0, 200)}`;
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              console.error('Upload: server returned non-JSON on success. Status:', xhr.status);
+              console.error('Upload: raw response body:', xhr.responseText);
+              console.error('Upload: response headers:', xhr.getAllResponseHeaders());
+              reject(new Error(
+                `Server returned invalid JSON after upload (status ${xhr.status}). ` +
+                `Raw response: ${xhr.responseText.substring(0, 300)}`
+              ));
             }
+          } else {
+            let msg = `HTTP ${xhr.status}`;
+            try {
+              const parsed = JSON.parse(xhr.responseText);
+              msg = parsed.error || msg;
+            } catch {
+              if (xhr.responseText) msg = `HTTP ${xhr.status}: ${xhr.responseText.substring(0, 200)}`;
+            }
+            console.error('Upload failed:', xhr.status, xhr.responseText);
+            reject(new Error(msg));
           }
-          console.error('Upload failed:', xhr.status, xhr.responseText);
-          reject(new Error(msg));
-        }
+        });
+
+        xhr.addEventListener('error', () => {
+          console.error('Upload network error');
+          reject(new Error('Network error — check your connection or proxy configuration'));
+        });
+        xhr.addEventListener('abort', () => {
+          console.error('Upload aborted');
+          reject(new Error('Upload was aborted — the server or proxy may have closed the connection (check size limits or timeouts)'));
+        });
+        xhr.addEventListener('timeout', () => {
+          console.error('Upload timed out');
+          reject(new Error('Upload timed out'));
+        });
+
+        xhr.send(fd);
       });
 
-      xhr.addEventListener('error', () => {
-        console.error('Upload network error');
-        reject(new Error('Network error — check your connection or proxy configuration'));
-      });
+      progressBar.style.width  = '100%';
+      progressText.textContent = 'Upload complete!';
+      await loadLibrary();
+      showToast(`"${name}" uploaded to library`, 'success');
+      setTimeout(() => closeModal('modal-upload'), 600);
+    } else {
+      const total = uploadFiles.length;
+      const tags  = state.uploadTags.join(',');
+      let done = 0;
+      progressText.textContent = `0 / ${total} uploaded`;
 
-      xhr.addEventListener('abort', () => {
-        console.error('Upload aborted');
-        reject(new Error('Upload was aborted — the server or proxy may have closed the connection (check size limits or timeouts)'));
-      });
+      const results = [];
+      for (let i = 0; i < uploadFiles.length; i += 5) {
+        const batch = uploadFiles.slice(i, i + 5);
+        const batchResults = await Promise.all(batch.map(file => {
+          const trackName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', trackName);
+          fd.append('tags', tags);
+          return fetch(`${BASE_PATH}/api/library`, { method: 'POST', body: fd })
+            .then(res => {
+              if (!res.ok) return res.json().then(j => { throw new Error(j.error || `HTTP ${res.status}`); });
+              return res.json();
+            })
+            .then(() => ({ ok: true }))
+            .catch(e => ({ ok: false, error: e.message }))
+            .then(result => {
+              done++;
+              progressBar.style.width  = Math.round(done / total * 100) + '%';
+              progressText.textContent = `${done} / ${total} uploaded`;
+              return result;
+            });
+        }));
+        results.push(...batchResults);
+      }
 
-      xhr.addEventListener('timeout', () => {
-        console.error('Upload timed out');
-        reject(new Error('Upload timed out'));
-      });
+      await loadLibrary();
+      const succeeded = results.filter(r => r.ok).length;
+      const failedCount = total - succeeded;
 
-      xhr.send(fd);
-    });
-
-    progressBar.style.width  = '100%';
-    progressText.textContent = 'Upload complete!';
-
-    await loadLibrary();
-    showToast(`"${name}" uploaded to library`, 'success');
-
-    setTimeout(() => closeModal('modal-upload'), 600);
+      if (failedCount === 0) {
+        showToast(`${total} track${total !== 1 ? 's' : ''} uploaded to library`, 'success');
+        setTimeout(() => closeModal('modal-upload'), 600);
+      } else if (succeeded === 0) {
+        showToast(`All ${total} uploads failed`, 'error');
+        progressWrap.style.display = 'none';
+      } else {
+        showToast(`${succeeded} of ${total} uploaded — ${failedCount} failed`, 'error');
+        setTimeout(() => closeModal('modal-upload'), 1200);
+      }
+    }
   } catch (e) {
     showToast('Upload failed: ' + e.message, 'error');
     progressWrap.style.display = 'none';
@@ -1642,27 +1686,46 @@ function setupTagInput(context) {
    FILE DROP ZONE
    ═══════════════════════════════════════════════════════════════════════════════ */
 function setupFileDropZone() {
-  const zone     = document.getElementById('file-drop-zone');
-  const input    = document.getElementById('upload-file-input');
-  const dropText = document.getElementById('file-drop-text');
+  const zone      = document.getElementById('file-drop-zone');
+  const input     = document.getElementById('upload-file-input');
+  const dropText  = document.getElementById('file-drop-text');
+  const nameRow   = document.getElementById('upload-name-row');
+  const nameInput = document.getElementById('upload-name-input');
+  const allowed   = ['.mp3','.wav','.ogg','.flac','.m4a'];
 
-  function setFile(file) {
-    if (!file) return;
-    const allowed = ['.mp3','.wav','.ogg','.flac','.m4a'];
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!allowed.includes(ext)) {
-      showToast('Unsupported format. Use MP3, WAV, OGG, FLAC or M4A', 'error');
-      return;
+  function setFiles(fileList) {
+    const files = Array.from(fileList).filter(f => {
+      const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+      return allowed.includes(ext);
+    });
+    const rejected = fileList.length - files.length;
+    if (rejected > 0) showToast(`${rejected} file${rejected !== 1 ? 's' : ''} skipped — unsupported format`, 'error');
+    if (!files.length) return;
+
+    const existingNames = new Set(
+      (state.libraryTracks || []).map(t => (t.original_filename || '').toLowerCase())
+    );
+    const duplicates = files.filter(f => existingNames.has(f.name.toLowerCase()));
+    const unique     = files.filter(f => !existingNames.has(f.name.toLowerCase()));
+    if (duplicates.length > 0) {
+      const names = duplicates.map(f => f.name).join(', ');
+      showToast(`Already in library, skipped: ${names}`, 'info');
     }
-    uploadFile = file;
-    dropText.textContent = `✓ ${file.name}`;
+    if (!unique.length) return;
+
+    uploadFiles = unique;
     zone.classList.add('has-file');
     zone.classList.remove('dragover');
 
-    // Auto-fill name if empty
-    const nameInput = document.getElementById('upload-name-input');
-    if (!nameInput.value.trim()) {
-      nameInput.value = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+    if (files.length === 1) {
+      dropText.textContent = `✓ ${files[0].name}`;
+      nameRow.style.display = '';
+      if (!nameInput.value.trim()) {
+        nameInput.value = files[0].name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+      }
+    } else {
+      dropText.textContent = `✓ ${files.length} files selected`;
+      nameRow.style.display = 'none';
     }
   }
 
@@ -1672,7 +1735,7 @@ function setupFileDropZone() {
   });
 
   input.addEventListener('change', () => {
-    if (input.files[0]) setFile(input.files[0]);
+    if (input.files.length) setFiles(input.files);
   });
 
   zone.addEventListener('dragover', e => {
@@ -1684,8 +1747,7 @@ function setupFileDropZone() {
 
   zone.addEventListener('drop', e => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    setFile(file);
+    if (e.dataTransfer.files.length) setFiles(e.dataTransfer.files);
   });
 }
 

@@ -17,8 +17,20 @@ func InitDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	// SQLite allows only one writer at a time. A single connection means
+	// database/sql serialises all operations before they reach SQLite,
+	// preventing SQLITE_BUSY errors under concurrent request load.
+	db.SetMaxOpenConns(1)
+
+	pragmas := []string{
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA busy_timeout = 5000",
+	}
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
 	}
 
 	if err := migrate(db); err != nil {
@@ -47,10 +59,11 @@ func migrate(db *sql.DB) error {
 
 	-- Central audio library: owns the file, independent of any session.
 	CREATE TABLE IF NOT EXISTS library_tracks (
-		id         INTEGER PRIMARY KEY AUTOINCREMENT,
-		name       TEXT    NOT NULL,
-		filename   TEXT    NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		name              TEXT    NOT NULL,
+		filename          TEXT    NOT NULL,
+		original_filename TEXT    NOT NULL DEFAULT '',
+		created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
 	-- Tags are global and shared across library tracks.
@@ -75,8 +88,16 @@ func migrate(db *sql.DB) error {
 		UNIQUE (session_id, library_track_id)
 	);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Idempotent migration: add original_filename to databases created before this column existed.
+	// SQLite has no "ADD COLUMN IF NOT EXISTS", so we run it unconditionally and ignore the
+	// "duplicate column name" error that occurs on fresh databases (which already have it).
+	db.Exec(`ALTER TABLE library_tracks ADD COLUMN original_filename TEXT NOT NULL DEFAULT ''`)
+
+	return nil
 }
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -215,7 +236,7 @@ func DeleteSession(db *sql.DB, id int) error {
 
 func GetLibraryTracks(db *sql.DB) ([]models.LibraryTrack, error) {
 	rows, err := db.Query(
-		`SELECT id, name, filename, created_at FROM library_tracks ORDER BY name ASC`,
+		`SELECT id, name, filename, original_filename, created_at FROM library_tracks ORDER BY name ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -226,7 +247,7 @@ func GetLibraryTracks(db *sql.DB) ([]models.LibraryTrack, error) {
 	for rows.Next() {
 		var t models.LibraryTrack
 		var ts string
-		if err := rows.Scan(&t.ID, &t.Name, &t.Filename, &ts); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Filename, &t.OriginalFilename, &ts); err != nil {
 			return nil, err
 		}
 		t.CreatedAt = parseTime(ts)
@@ -255,8 +276,8 @@ func GetLibraryTrackByID(db *sql.DB, id int) (models.LibraryTrack, error) {
 	var t models.LibraryTrack
 	var ts string
 	err := db.QueryRow(
-		`SELECT id, name, filename, created_at FROM library_tracks WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Name, &t.Filename, &ts)
+		`SELECT id, name, filename, original_filename, created_at FROM library_tracks WHERE id = ?`, id,
+	).Scan(&t.ID, &t.Name, &t.Filename, &t.OriginalFilename, &ts)
 	if err != nil {
 		return models.LibraryTrack{}, err
 	}
@@ -270,9 +291,9 @@ func GetLibraryTrackByID(db *sql.DB, id int) (models.LibraryTrack, error) {
 	return t, nil
 }
 
-func CreateLibraryTrack(db *sql.DB, name, filename string, tags []string) (models.LibraryTrack, error) {
+func CreateLibraryTrack(db *sql.DB, name, filename, originalFilename string, tags []string) (models.LibraryTrack, error) {
 	res, err := db.Exec(
-		`INSERT INTO library_tracks (name, filename) VALUES (?, ?)`, name, filename,
+		`INSERT INTO library_tracks (name, filename, original_filename) VALUES (?, ?, ?)`, name, filename, originalFilename,
 	)
 	if err != nil {
 		return models.LibraryTrack{}, err

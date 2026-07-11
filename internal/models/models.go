@@ -22,11 +22,12 @@ type Session struct {
 // LibraryTrack is a track in the central library.
 // It owns the audio file and can be referenced by many sessions.
 type LibraryTrack struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	Filename  string    `json:"filename"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
+	ID               int       `json:"id"`
+	Name             string    `json:"name"`
+	Filename         string    `json:"filename"`
+	OriginalFilename string    `json:"original_filename"`
+	Tags             []string  `json:"tags"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // SessionTrack is a reference from a session to a library track.

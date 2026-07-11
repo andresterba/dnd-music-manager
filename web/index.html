@@ -230,15 +230,17 @@
         <button class="modal-close" data-close="modal-upload">&times;</button>
       </div>
       <div class="modal-body">
-        <label class="form-label">Track Name <span class="required">*</span></label>
-        <input type="text" class="form-input" id="upload-name-input" placeholder="e.g. Tavern Ambience" maxlength="200" />
+        <div id="upload-name-row">
+          <label class="form-label">Track Name <span class="required">*</span></label>
+          <input type="text" class="form-input" id="upload-name-input" placeholder="e.g. Tavern Ambience" maxlength="200" />
+        </div>
 
         <label class="form-label" style="margin-top:12px;">Audio File <span class="required">*</span></label>
         <div class="file-drop-zone" id="file-drop-zone">
           <div class="file-drop-icon">🎵</div>
-          <div class="file-drop-text" id="file-drop-text">Drop audio file here or <span class="file-browse-link">browse</span></div>
-          <div class="file-drop-hint">MP3, WAV, OGG, FLAC, M4A — max 100 MB</div>
-          <input type="file" id="upload-file-input" accept=".mp3,.wav,.ogg,.flac,.m4a" style="display:none;" />
+          <div class="file-drop-text" id="file-drop-text">Drop audio files here or <span class="file-browse-link">browse</span></div>
+          <div class="file-drop-hint">MP3, WAV, OGG, FLAC, M4A — max 100 MB each</div>
+          <input type="file" id="upload-file-input" accept=".mp3,.wav,.ogg,.flac,.m4a" style="display:none;" multiple />
         </div>
 
         <label class="form-label" style="margin-top:12px;">Tags</label>
