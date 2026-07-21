@@ -87,6 +87,15 @@ func migrate(db *sql.DB) error {
 		position         INTEGER NOT NULL DEFAULT 0,
 		UNIQUE (session_id, library_track_id)
 	);
+
+	-- Soundboard: short sound effects managed independently of the library.
+	CREATE TABLE IF NOT EXISTS soundboard_sounds (
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		name              TEXT    NOT NULL,
+		filename          TEXT    NOT NULL,
+		original_filename TEXT    NOT NULL DEFAULT '',
+		created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return err
@@ -563,6 +572,85 @@ func setTagsForTrack(db *sql.DB, trackID int, tags []string) error {
 		}
 	}
 	return nil
+}
+
+// ─── Soundboard ───────────────────────────────────────────────────────────────
+
+func GetSoundboardSounds(db *sql.DB) ([]models.SoundboardSound, error) {
+	rows, err := db.Query(
+		`SELECT id, name, filename, original_filename, created_at FROM soundboard_sounds ORDER BY name ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.SoundboardSound
+	for rows.Next() {
+		var s models.SoundboardSound
+		var ts string
+		if err := rows.Scan(&s.ID, &s.Name, &s.Filename, &s.OriginalFilename, &ts); err != nil {
+			return nil, err
+		}
+		s.CreatedAt = parseTime(ts)
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []models.SoundboardSound{}
+	}
+	return out, nil
+}
+
+func GetSoundboardSoundByID(db *sql.DB, id int) (models.SoundboardSound, error) {
+	var s models.SoundboardSound
+	var ts string
+	err := db.QueryRow(
+		`SELECT id, name, filename, original_filename, created_at FROM soundboard_sounds WHERE id = ?`, id,
+	).Scan(&s.ID, &s.Name, &s.Filename, &s.OriginalFilename, &ts)
+	if err != nil {
+		return models.SoundboardSound{}, err
+	}
+	s.CreatedAt = parseTime(ts)
+	return s, nil
+}
+
+func CreateSoundboardSound(db *sql.DB, name, filename, originalFilename string) (models.SoundboardSound, error) {
+	res, err := db.Exec(
+		`INSERT INTO soundboard_sounds (name, filename, original_filename) VALUES (?, ?, ?)`,
+		name, filename, originalFilename,
+	)
+	if err != nil {
+		return models.SoundboardSound{}, err
+	}
+	id, _ := res.LastInsertId()
+	return GetSoundboardSoundByID(db, int(id))
+}
+
+func UpdateSoundboardSound(db *sql.DB, id int, name string) (models.SoundboardSound, error) {
+	if _, err := db.Exec(
+		`UPDATE soundboard_sounds SET name = ? WHERE id = ?`, name, id,
+	); err != nil {
+		return models.SoundboardSound{}, err
+	}
+	return GetSoundboardSoundByID(db, id)
+}
+
+// DeleteSoundboardSound removes the sound and returns its filename so the
+// caller can remove the file from disk.
+func DeleteSoundboardSound(db *sql.DB, id int) (string, error) {
+	var filename string
+	if err := db.QueryRow(
+		`SELECT filename FROM soundboard_sounds WHERE id = ?`, id,
+	).Scan(&filename); err != nil {
+		return "", err
+	}
+	if _, err := db.Exec(`DELETE FROM soundboard_sounds WHERE id = ?`, id); err != nil {
+		return "", err
+	}
+	return filename, nil
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

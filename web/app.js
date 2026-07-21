@@ -35,6 +35,11 @@ const state = {
   // Layered simultaneous tracks
   layeredTracks: [],     // [{track, audio, volume}]
 
+  // Soundboard
+  soundboardSounds: [],      // SoundboardSound[]
+  activeSoundInstances: [],  // [{instanceId, soundId, audio}] — one-shot overlays currently playing
+  editingSoundId: null,
+
   // Crossfade internals
   _crossfadeTimer: null,
   _fadingOut: false,
@@ -249,6 +254,19 @@ const api = {
 
   uploadLibraryTrack: (formData) =>
     fetch(`${BASE_PATH}/api/library`, { method: 'POST', body: formData })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data;
+      }),
+
+  // Soundboard
+  getSoundboardSounds:   ()        => apiFetch('GET',    `${BASE_PATH}/api/soundboard`),
+  updateSoundboardSound: (id, n)   => apiFetch('PUT',    `${BASE_PATH}/api/soundboard/${id}`, { name: n }),
+  deleteSoundboardSound: (id)      => apiFetch('DELETE', `${BASE_PATH}/api/soundboard/${id}`),
+
+  uploadSoundboardSound: (formData) =>
+    fetch(`${BASE_PATH}/api/soundboard`, { method: 'POST', body: formData })
       .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -835,6 +853,123 @@ function showLibraryView() {
   loadLibrary();
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SOUNDBOARD
+   ═══════════════════════════════════════════════════════════════════════════════ */
+async function loadSoundboard() {
+  try {
+    state.soundboardSounds = await api.getSoundboardSounds();
+  } catch (e) {
+    showToast('Failed to load soundboard: ' + e.message, 'error');
+    state.soundboardSounds = [];
+  }
+  renderSoundboard();
+}
+
+function renderSoundboard() {
+  const grid  = document.getElementById('soundboard-grid');
+  const empty = document.getElementById('soundboard-empty');
+
+  grid.querySelectorAll('.sound-tile').forEach(el => el.remove());
+
+  if (state.soundboardSounds.length === 0) {
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  state.soundboardSounds.forEach(sound => {
+    const isActive = state.activeSoundInstances.some(s => s.soundId === sound.id);
+    const tile = document.createElement('div');
+    tile.className = `sound-tile${isActive ? ' playing' : ''}`;
+    tile.dataset.soundId = sound.id;
+
+    tile.innerHTML = `
+      <button class="sound-tile-play" title="Play &quot;${escapeHTML(sound.name)}&quot;">
+        <span class="sound-tile-icon">&#127908;</span>
+        <span class="sound-tile-name">${escapeHTML(sound.name)}</span>
+      </button>
+      <div class="sound-tile-actions">
+        <button class="track-btn edit" title="Rename sound">&#9998;</button>
+        <button class="track-btn delete" title="Delete sound">&times;</button>
+      </div>`;
+
+    tile.querySelector('.sound-tile-play').addEventListener('click', () => {
+      playSoundboardSound(sound);
+    });
+    tile.querySelector('.track-btn.edit').addEventListener('click', () => {
+      openEditSoundModal(sound);
+    });
+    tile.querySelector('.track-btn.delete').addEventListener('click', () => {
+      confirmDelete(
+        `Delete "${sound.name}" from the soundboard? The audio file will be permanently deleted.`,
+        async () => {
+          await api.deleteSoundboardSound(sound.id);
+          await loadSoundboard();
+          showToast('Sound deleted', 'info');
+        }
+      );
+    });
+
+    grid.appendChild(tile);
+  });
+}
+
+function showSoundboardView() {
+  document.getElementById('main-empty').style.display      = 'none';
+  document.getElementById('session-view').style.display    = 'none';
+  document.getElementById('library-view').style.display    = 'none';
+  document.getElementById('soundboard-view').style.display = 'flex';
+  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+  state.currentSession  = null;
+  state.currentCampaign = null;
+  loadSoundboard();
+}
+
+// One-shot, fire-and-forget playback: clicking a sound overlays a new
+// instance on top of whatever else is playing. Clicking again while it's
+// still playing starts another overlapping instance.
+function playSoundboardSound(sound) {
+  const instanceId = `${sound.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const soundAudio = new Audio(audioSrc(sound.filename));
+  soundAudio.loop   = false;
+  soundAudio.volume = state.isMuted ? 0 : state.volume;
+
+  const instance = { instanceId, soundId: sound.id, audio: soundAudio };
+  state.activeSoundInstances.push(instance);
+  highlightSoundTile(sound.id, true);
+
+  const cleanup = () => {
+    state.activeSoundInstances = state.activeSoundInstances.filter(s => s.instanceId !== instanceId);
+    if (!state.activeSoundInstances.some(s => s.soundId === sound.id)) {
+      highlightSoundTile(sound.id, false);
+    }
+  };
+  soundAudio.addEventListener('ended', cleanup);
+  soundAudio.addEventListener('error', cleanup);
+
+  soundAudio.play().catch(err => {
+    showToast('Playback error: ' + err.message, 'error');
+    cleanup();
+  });
+}
+
+function highlightSoundTile(soundId, isActive) {
+  const tile = document.querySelector(`.sound-tile[data-sound-id="${soundId}"]`);
+  if (tile) tile.classList.toggle('playing', isActive);
+}
+
+function stopAllSoundboardSounds() {
+  if (state.activeSoundInstances.length === 0) return;
+  state.activeSoundInstances.forEach(s => {
+    s.audio.pause();
+    s.audio.src = '';
+  });
+  state.activeSoundInstances = [];
+  document.querySelectorAll('.sound-tile.playing').forEach(el => el.classList.remove('playing'));
+  showToast('All sounds stopped', 'info');
+}
+
 function currentlyPlayingTrack() {
   if (state.queueIndex >= 0 && state.queueIndex < state.queue.length) {
     return state.queue[state.queueIndex].track;
@@ -1001,6 +1136,7 @@ function setVolume(v) {
   state.isMuted = (v === 0);
   audio.volume  = v;
   state.layeredTracks.forEach(l => { l.audio.volume = l.volume * v; });
+  state.activeSoundInstances.forEach(s => { s.audio.volume = v; });
   updateVolIcon();
 }
 
@@ -1541,6 +1677,188 @@ async function saveEditTrack() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   UPLOAD SOUND MODAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+let uploadSoundFiles = [];
+
+function openUploadSoundModal() {
+  uploadSoundFiles = [];
+  document.getElementById('upload-sound-name-input').value = '';
+  document.getElementById('upload-sound-file-input').value = '';
+  document.getElementById('sound-file-drop-text').innerHTML = 'Drop audio files here or <span class="file-browse-link">browse</span>';
+  document.getElementById('sound-file-drop-zone').classList.remove('has-file', 'dragover');
+  document.getElementById('upload-sound-progress-wrap').style.display = 'none';
+  document.getElementById('upload-sound-progress-bar').style.width    = '0%';
+  document.getElementById('upload-sound-name-row').style.display = '';
+  openModal('modal-upload-sound');
+  setTimeout(() => document.getElementById('upload-sound-name-input').focus(), 80);
+}
+
+async function saveUploadSound() {
+  if (!uploadSoundFiles.length) { showToast('Please select an audio file', 'error'); return; }
+
+  const isSingle = uploadSoundFiles.length === 1;
+  const name = document.getElementById('upload-sound-name-input').value.trim();
+  if (isSingle && !name) { showToast('Sound name is required', 'error'); return; }
+
+  const btn = document.getElementById('btn-save-upload-sound');
+  btn.disabled = true;
+
+  const progressWrap = document.getElementById('upload-sound-progress-wrap');
+  const progressBar  = document.getElementById('upload-sound-progress-bar');
+  const progressText = document.getElementById('upload-sound-progress-text');
+  progressWrap.style.display = '';
+  progressBar.style.width    = '0%';
+
+  try {
+    if (isSingle) {
+      progressText.textContent = 'Uploading…';
+      const fd = new FormData();
+      fd.append('file', uploadSoundFiles[0]);
+      fd.append('name', name);
+      await api.uploadSoundboardSound(fd);
+
+      progressBar.style.width  = '100%';
+      progressText.textContent = 'Upload complete!';
+      await loadSoundboard();
+      showToast(`"${name}" added to soundboard`, 'success');
+      setTimeout(() => closeModal('modal-upload-sound'), 600);
+    } else {
+      const total = uploadSoundFiles.length;
+      let done = 0;
+      progressText.textContent = `0 / ${total} uploaded`;
+
+      const results = [];
+      for (let i = 0; i < uploadSoundFiles.length; i += 5) {
+        const batch = uploadSoundFiles.slice(i, i + 5);
+        const batchResults = await Promise.all(batch.map(file => {
+          const soundName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', soundName);
+          return api.uploadSoundboardSound(fd)
+            .then(() => ({ ok: true }))
+            .catch(e => ({ ok: false, error: e.message }))
+            .then(result => {
+              done++;
+              progressBar.style.width  = Math.round(done / total * 100) + '%';
+              progressText.textContent = `${done} / ${total} uploaded`;
+              return result;
+            });
+        }));
+        results.push(...batchResults);
+      }
+
+      await loadSoundboard();
+      const succeeded = results.filter(r => r.ok).length;
+      const failedCount = total - succeeded;
+
+      if (failedCount === 0) {
+        showToast(`${total} sound${total !== 1 ? 's' : ''} added to soundboard`, 'success');
+        setTimeout(() => closeModal('modal-upload-sound'), 600);
+      } else if (succeeded === 0) {
+        showToast(`All ${total} uploads failed`, 'error');
+        progressWrap.style.display = 'none';
+      } else {
+        showToast(`${succeeded} of ${total} uploaded — ${failedCount} failed`, 'error');
+        setTimeout(() => closeModal('modal-upload-sound'), 1200);
+      }
+    }
+  } catch (e) {
+    showToast('Upload failed: ' + e.message, 'error');
+    progressWrap.style.display = 'none';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function setupSoundFileDropZone() {
+  const zone      = document.getElementById('sound-file-drop-zone');
+  const input     = document.getElementById('upload-sound-file-input');
+  const dropText  = document.getElementById('sound-file-drop-text');
+  const nameRow   = document.getElementById('upload-sound-name-row');
+  const nameInput = document.getElementById('upload-sound-name-input');
+  const allowed   = ['.mp3', '.wav', '.ogg', '.flac', '.m4a'];
+
+  function setFiles(fileList) {
+    const files = Array.from(fileList).filter(f => {
+      const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+      return allowed.includes(ext);
+    });
+    const rejected = fileList.length - files.length;
+    if (rejected > 0) showToast(`${rejected} file${rejected !== 1 ? 's' : ''} skipped — unsupported format`, 'error');
+    if (!files.length) return;
+
+    uploadSoundFiles = files;
+    zone.classList.add('has-file');
+    zone.classList.remove('dragover');
+
+    if (files.length === 1) {
+      dropText.textContent = `✓ ${files[0].name}`;
+      nameRow.style.display = '';
+      if (!nameInput.value.trim()) {
+        nameInput.value = files[0].name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+      }
+    } else {
+      dropText.textContent = `✓ ${files.length} files selected`;
+      nameRow.style.display = 'none';
+    }
+  }
+
+  zone.addEventListener('click', e => {
+    if (e.target.closest('input')) return;
+    input.click();
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files.length) setFiles(input.files);
+  });
+
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    zone.classList.add('dragover');
+  });
+
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) setFiles(e.dataTransfer.files);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EDIT SOUND MODAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+function openEditSoundModal(sound) {
+  state.editingSoundId = sound.id;
+  document.getElementById('edit-sound-id').value         = sound.id;
+  document.getElementById('edit-sound-name-input').value  = sound.name;
+  openModal('modal-edit-sound');
+  setTimeout(() => document.getElementById('edit-sound-name-input').focus(), 80);
+}
+
+async function saveEditSound() {
+  const id   = parseInt(document.getElementById('edit-sound-id').value);
+  const name = document.getElementById('edit-sound-name-input').value.trim();
+  if (!name) { showToast('Sound name is required', 'error'); return; }
+
+  const btn = document.getElementById('btn-save-edit-sound');
+  btn.disabled = true;
+
+  try {
+    await api.updateSoundboardSound(id, name);
+    closeModal('modal-edit-sound');
+    await loadSoundboard();
+    showToast('Sound updated', 'success');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    LIBRARY PICKER MODAL
    ═══════════════════════════════════════════════════════════════════════════════ */
 async function openLibraryPicker() {
@@ -1851,6 +2169,7 @@ function initPlayerEvents() {
       state.isMuted    = true;
       audio.volume     = 0;
       state.layeredTracks.forEach(l => { l.audio.volume = 0; });
+      state.activeSoundInstances.forEach(s => { s.audio.volume = 0; });
       updateVolIcon();
     }
   });
@@ -1892,7 +2211,7 @@ function isTablet() {
 }
 
 function initStaticEvents() {
-  // Sidebar tabs: Campaigns / Library
+  // Sidebar tabs: Campaigns / Library / Soundboard
   document.querySelectorAll('.sidebar-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
@@ -1900,9 +2219,13 @@ function initStaticEvents() {
       if (tab.dataset.tab === 'library') {
         if (isTablet()) closeSidebar();
         showLibraryView();
+      } else if (tab.dataset.tab === 'soundboard') {
+        if (isTablet()) closeSidebar();
+        showSoundboardView();
       } else {
         // Switch back to campaigns tab — show welcome or current session
         document.getElementById('library-view').style.display = 'none';
+        document.getElementById('soundboard-view').style.display = 'none';
         if (state.currentSession) {
           document.getElementById('session-view').style.display = 'flex';
         } else {
@@ -1978,6 +2301,19 @@ function initStaticEvents() {
     if (e.key === 'Enter') saveEditTrack();
   });
 
+  // ── Soundboard ──────────────────────────────────────────────────────────────
+  document.getElementById('btn-upload-sound').addEventListener('click', openUploadSoundModal);
+  document.getElementById('btn-stop-all-sounds').addEventListener('click', stopAllSoundboardSounds);
+
+  // ── Modal: Upload Sound ─────────────────────────────────────────────────────
+  document.getElementById('btn-save-upload-sound').addEventListener('click', saveUploadSound);
+
+  // ── Modal: Edit Sound ───────────────────────────────────────────────────────
+  document.getElementById('btn-save-edit-sound').addEventListener('click', saveEditSound);
+  document.getElementById('edit-sound-name-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveEditSound();
+  });
+
   // ── Modal: Confirm Delete ──────────────────────────────────────────────────
   document.getElementById('btn-confirm-delete').addEventListener('click', async () => {
     if (state.confirmCallback) {
@@ -2024,6 +2360,7 @@ async function init() {
   setupTagInput('upload');
   setupTagInput('edit');
   setupFileDropZone();
+  setupSoundFileDropZone();
 
   // Set initial volume
   audio.volume = state.volume;

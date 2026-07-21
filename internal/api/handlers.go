@@ -556,6 +556,140 @@ func (h *Handler) deleteLibraryTrack(w http.ResponseWriter, _ *http.Request, id 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
+// ─── Soundboard ───────────────────────────────────────────────────────────────
+
+// HandleSoundboard handles /api/soundboard and /api/soundboard/{id}
+func (h *Handler) HandleSoundboard(w http.ResponseWriter, r *http.Request) {
+	corsHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	segments := pathSegments(r)
+
+	// /api/soundboard/{id}
+	if len(segments) == 3 && segments[2] != "" {
+		id, err := strconv.Atoi(segments[2])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid sound id")
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			h.updateSoundboardSound(w, r, id)
+		case http.MethodDelete:
+			h.deleteSoundboardSound(w, r, id)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+		return
+	}
+
+	// /api/soundboard
+	switch r.Method {
+	case http.MethodGet:
+		sounds, err := db.GetSoundboardSounds(h.DB)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, sounds)
+
+	case http.MethodPost:
+		h.uploadSoundboardSound(w, r)
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *Handler) uploadSoundboardSound(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse multipart form: "+err.Error())
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	allowed := map[string]bool{
+		".mp3": true, ".wav": true, ".ogg": true, ".flac": true, ".m4a": true,
+	}
+	if !allowed[ext] {
+		writeError(w, http.StatusBadRequest, "unsupported audio format; allowed: mp3, wav, ogg, flac, m4a")
+		return
+	}
+
+	filename := generateFilename(ext)
+	destPath := filepath.Join(h.UploadDir, filename)
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create destination file: "+err.Error())
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		_ = os.Remove(destPath)
+		writeError(w, http.StatusInternalServerError, "failed to save file: "+err.Error())
+		return
+	}
+
+	sound, err := db.CreateSoundboardSound(h.DB, name, filename, header.Filename)
+	if err != nil {
+		_ = os.Remove(destPath)
+		writeError(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sound)
+}
+
+func (h *Handler) updateSoundboardSound(w http.ResponseWriter, r *http.Request, id int) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	sound, err := db.UpdateSoundboardSound(h.DB, id, body.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sound)
+}
+
+func (h *Handler) deleteSoundboardSound(w http.ResponseWriter, _ *http.Request, id int) {
+	filename, err := db.DeleteSoundboardSound(h.DB, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = os.Remove(filepath.Join(h.UploadDir, filename))
+	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 
 func (h *Handler) HandleTags(w http.ResponseWriter, r *http.Request) {

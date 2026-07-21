@@ -133,6 +133,15 @@ func main() {
 		h.HandleLibrary(w, r)
 	})
 
+	// Soundboard: /api/soundboard and /api/soundboard/{id}
+	mux.HandleFunc("/api/soundboard/", func(w http.ResponseWriter, r *http.Request) {
+		h.HandleSoundboard(w, r)
+	})
+
+	mux.HandleFunc("/api/soundboard", func(w http.ResponseWriter, r *http.Request) {
+		h.HandleSoundboard(w, r)
+	})
+
 	// Tags: /api/tags
 	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
 		h.HandleTags(w, r)

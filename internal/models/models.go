@@ -44,3 +44,14 @@ type Tag struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
+
+// SoundboardSound is a short sound effect (thunder, rain, etc.) managed
+// independently of the library. Clicking it on the soundboard overlays
+// it on top of whatever is currently playing.
+type SoundboardSound struct {
+	ID               int       `json:"id"`
+	Name             string    `json:"name"`
+	Filename         string    `json:"filename"`
+	OriginalFilename string    `json:"original_filename"`
+	CreatedAt        time.Time `json:"created_at"`
+}

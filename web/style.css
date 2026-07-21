@@ -373,6 +373,91 @@ p  { color: var(--text-secondary); }
   min-height: 0;
 }
 
+/* Soundboard view */
+.soundboard-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.soundboard-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.soundboard-grid {
+  flex: 1;
+  padding: 20px 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  align-content: start;
+  overflow-y: auto;
+}
+
+.sound-tile {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition);
+}
+
+.sound-tile:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+.sound-tile.playing {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent);
+  animation: sound-tile-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes sound-tile-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(232, 160, 32, 0.25); }
+  50%      { box-shadow: 0 0 16px rgba(232, 160, 32, 0.55); }
+}
+
+.sound-tile-play {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.sound-tile-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.sound-tile.playing .sound-tile-icon {
+  color: var(--accent);
+}
+
+.sound-tile-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+  word-break: break-word;
+}
+
+.sound-tile-actions {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px 12px;
+}
+
 /* Session view */
 .session-view {
   display: flex;
@@ -2254,6 +2339,17 @@ p  { color: var(--text-secondary); }
   .session-header .btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .soundboard-header-actions {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .soundboard-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    padding: 16px;
   }
 
   /* Track cards: stack actions below info */
