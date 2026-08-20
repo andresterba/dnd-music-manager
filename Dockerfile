@@ -1,5 +1,5 @@
 # ─── Stage 1: Build ───────────────────────────────────────────────────────────
-FROM golang:1.26.5-alpine AS builder
+FROM golang:1.27.0-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dnd-music-manager .
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
-FROM alpine:3.23
+FROM alpine:3.24
 
 WORKDIR /app
 
